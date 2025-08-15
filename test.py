@@ -1,4 +1,4 @@
-    import streamlit as st
+import streamlit as st
 
-    st.title("Hello World!")
-    st.write("This is your first Streamlit application.")
+st.title("Hello World!")
+st.write("This is your first Streamlit application.")
