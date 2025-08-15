@@ -102,18 +102,33 @@ def generate_interactions(products, num_users=500):
 def recommend_products_by_category(products, interactions_df, category, top_n=5):
     if products.empty or interactions_df.empty:
         return pd.DataFrame()
-    category_products = products[products['Category'] == category]
+
+    # Filter for the selected category
+    category_products = products[products['Category'] == category].copy()
+    if category_products.empty:
+        return pd.DataFrame()
+
+    # Calculate popularity based on interactions
     product_popularity = interactions_df[interactions_df['ProductID'].isin(category_products['Product ID'])] \
-                         .groupby('ProductID').size().sort_values(ascending=False)
-    top_products = product_popularity.index.tolist()
-    recommended = products[products['Product ID'].isin(top_products)]
-    recommended = recommended[recommended['Category'] == category]
-    recommended = recommended.sort_values(by='Rating', ascending=False).head(top_n)
-    return recommended[['Product ID', 'Category', 'Rating', 'Price']]
+                         .groupby('ProductID').size().reset_index(name='Popularity')
+
+    # Merge popularity with the product data to get all columns
+    recommended = pd.merge(product_popularity, category_products, left_on='ProductID', right_on='Product ID', how='inner')
+    
+    # Sort by Popularity and Rating to get the top products
+    recommended = recommended.sort_values(by=['Popularity', 'Rating'], ascending=[False, False]).head(top_n)
+
+    # Return the required columns
+    return recommended[['Product ID', 'Category', 'Rating', 'Price', 'Users Purchased']]
 
 def knn_recommend(df, product_id, n_neighbors=5):
     if df.empty:
         return pd.DataFrame()
+    
+    # Ensure all required columns are present before proceeding
+    if not all(col in df.columns for col in ["Users Purchased", "Rating", "Price"]):
+        return pd.DataFrame()
+
     features = df[["Users Purchased", "Rating", "Price"]]
     scaler = StandardScaler()
     features_scaled = scaler.fit_transform(features)
@@ -145,6 +160,7 @@ def complementary_recommend(df, product_id):
         if not related:
             return pd.DataFrame()
         filtered = df[df["Category"].isin(related)]
+        # Ensure all required columns are returned
         return filtered.sort_values(by=["Rating", "Users Purchased"], ascending=False).head(10)[
             ["Product ID", "Category", "Rating", "Users Purchased", "Price"]
         ]
@@ -189,9 +205,11 @@ if page == "🏷 Product Recommendations":
         if st.sidebar.button('Recommend'):
             recs = recommend_products_by_category(products_df, interactions_df, category, num_products)
             if not recs.empty:
-                recs["Product ID"] = recs["Product ID"].apply(lambda pid: f'<a href="?page=📦+Product+Details&product_id={pid}">{pid}</a>')
+                # Prepare the dataframe for display
+                recs_display = recs.copy()
+                recs_display["Product ID"] = recs_display["Product ID"].apply(lambda pid: f'<a href="?page=📦+Product+Details&product_id={pid}">{pid}</a>')
                 st.success(f"Top {num_products} products in '{category}'")
-                st.write(recs.to_html(escape=False, index=False), unsafe_allow_html=True)
+                st.write(recs_display.to_html(escape=False, index=False), unsafe_allow_html=True)
             else:
                 st.info("No recommendations available.")
 
@@ -227,7 +245,7 @@ elif page == "🛠 Manage Products":
     # Add Product
     st.subheader("Add New Product")
     with st.form(key='add_product_form'):
-        category = st.selectbox('Category', ['Shoes', 'Watches', 'Bags', 'Sunglasses', 'Smartphones'])
+        category = st.selectbox('Category', ['Shoes', 'Watches', 'Bags', 'Sunglasses', 'Smartphones', 'Men Wallet', 'Earbuds'])
         rating = st.slider('Rating', 1.0, 5.0, 4.0, 0.1)
         users_purchased = st.number_input('Users Purchased', min_value=0, step=1)
         price = st.number_input('Price ($)', min_value=0.0, step=0.01)
